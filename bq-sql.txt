@@ -1,0 +1,76 @@
+DECLARE startdate DATE DEFAULT '2023-08-01';
+DECLARE enddate DATE DEFAULT '2024-01-31';
+DROP TABLE IF EXISTS wellnow.dbo.temptable1;
+CREATE TEMPORARY TABLE wellnow.dbo.temptable1
+  AS
+    SELECT
+        ch.practice,
+        ch.clinic,
+        ch.type AS visit_type,
+        ch.status AS chargedstatus,
+        CASE
+           ch.status
+          WHEN '1' THEN 'Pending'
+          WHEN '2' THEN 'Charged'
+          WHEN '7' THEN 'Sent'
+          WHEN '8' THEN 'Posted'
+          WHEN '9' THEN 'Closed'
+          WHEN '0' THEN 'Initial'
+        END AS chargestatusdesc,
+        rebill_flag,
+        ch.svc_date,
+        x.description AS payer_class,
+        ch.inv_num,
+        ch.total_charge,
+        ch.total_adj,
+        ch.total_paid,
+        ch.crg_balance,
+        CASE
+           l.type
+          WHEN 'e' THEN CAST(l.log_num as NUMERIC) + NUMERIC '0.31'
+          WHEN 'p' THEN CAST( l.log_num as NUMERIC) + NUMERIC '0.32'
+          WHEN 'w' THEN CAST(l.log_num as NUMERIC) + NUMERIC '0.33'
+        END AS composite_visit_id,
+        crgheaderpk,
+        l.logdetailpk
+      FROM
+        pic.dbo.crgheader AS ch
+        LEFT OUTER JOIN (
+          SELECT DISTINCT
+              x_0.key_name,
+              x_0.entity,
+              x_0.description
+            FROM
+              common_pic.dbo.utilgroup AS x_0
+            WHERE x_0.group_name = 'PAYER-CLASS'
+        ) AS x ON x.key_name = ch.payer_class
+         AND x.entity = ch.practice
+        LEFT OUTER JOIN pic.dbo.logdetail AS l ON l.logdetailpk = ch.logdetailpk
+      WHERE ch.svc_date BETWEEN startdate AND enddate
+       AND ch.type IN(
+        'p', 'w', 'e'
+      )
+       AND ch.practice IN(
+        'pic', 'picch', 'picin', 'picwi'
+      )
+       AND ch.crg_balance = NUMERIC '0.00'
+;
+SELECT
+    t.practice,
+    t.clinic,
+    vw.department_code,
+    t.visit_type,
+    t.chargedstatus,
+    t.chargestatusdesc,
+    t.svc_date,
+    t.inv_num,
+    t.rebill_flag,
+    t.payer_class,
+    t.total_charge,
+    t.total_adj,
+    t.total_paid,
+    t.crg_balance
+  FROM
+    temptable1 AS t
+    LEFT OUTER JOIN wellnow.dbo.vw_visitsdaily_union_combined AS vw ON vw.composite_visit_id = t.composite_visit_id
+;
